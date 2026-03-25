@@ -1,4 +1,4 @@
 git status          # See what changed (shows modified: main.py)
-git add main.py     # Stage the change
-git commit -m "Updated main.py with new tiling logic"   # Save locally
-git push origin main           # Upload to GitHub
+git add filename.extension     # Stage the change
+git commit -m "ex: Updated main.py with new tiling logic"   # Save locally
+git push            # Upload to GitHub
