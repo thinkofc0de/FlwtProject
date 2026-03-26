@@ -40,6 +40,18 @@ class FlowtAgent:
         self.animation_loop()
         self.root.mainloop()
 
+    def classify_intent(self, query):
+        q = query.lower()
+        # Step 2: Decide region based on keywords
+        ribbon_keys = ['file', 'insert', 'references', 'view', 'layout', 'home', 'tab', 'menu']
+        bottom_keys = ['taskbar', 'start', 'clock', 'battery', 'wifi', 'volume', 'date']
+
+        if any(key in q for key in ribbon_keys):
+            return "RIBBON"
+        elif any(key in q for key in bottom_keys):
+            return "BOTTOM"
+        else:
+            return "WORKING_AREA"
     def _show_stars(self, x, y):
         """Creates a temporary star burst at the target location."""
         star_window = tk.Toplevel()
@@ -87,41 +99,58 @@ class FlowtAgent:
         threading.Thread(target=self.think_and_see, args=(query,), daemon=True).start()
 
     def think_and_see(self, query):
-        img_64 = vision.capture_screen_base64()
-
-        # Moondream likes "Point-and-detect" style prompts
-        prompt = f"Find the center coordinates of the '{query}' in this image. Return only [x, y]."
+        # 1. Identify which part of the screen to crop (Step 2 of your workflow)
+        region = self.classify_intent(query)
+        self.label.config(text=f"🔍 SCANNING {region}...", fg="#bb86fc")
 
         try:
+            # 2. Call the NEW function (This is likely where line 90 is failing)
+            # It now returns the image AND the vertical starting point (offset_y)
+            img_64, offset_y = vision.capture_targeted_region(region)
+
+            if not img_64:
+                self.label.config(text="⚠️ VISION ERROR", bg="orange")
+                return
+
+            prompt = f"Find the center coordinates of the '{query}' in this image. Return only [x, y]."
+
             response = ollama.chat(
-                model='moondream',  # Use the lightweight model
+                model='moondream',
                 messages=[{'role': 'user', 'content': prompt, 'images': [img_64]}]
             )
 
             output = response['message']['content']
             print(f"Moondream Result: {output}")
 
-            # The same flexible Regex we built earlier will work here
             match = re.search(r'\[\s*(\d+)\s*,\s*(\d+)\s*\]', output)
 
             if match:
-                # IMPORTANT: Moondream often returns coordinates in percentages (0-1000)
-                # If the numbers are small (like 150, 45), it's likely percentage-based.
                 raw_x, raw_y = int(match.group(1)), int(match.group(2))
-
-                # Logic to check if we need to scale the coordinates
                 width, height = pyautogui.size()
-                if raw_x <= 1000 and raw_y <= 1000:
-                    self.target_x = int((raw_x / 1000) * width)
-                    self.target_y = int((raw_y / 1000) * height)
+
+                # 3. Coordinate Remapping (Step 5 of your workflow)
+                # We calculate the X normally, but for Y, we add the offset_y
+                # so the boat knows where the crop started on the real screen.
+                self.target_x = int((raw_x / 1000) * width)
+
+                # Determine the height of the slice we took
+                if region == "RIBBON":
+                    slice_h = int(height * 0.25)
+                elif region == "BOTTOM":
+                    slice_h = int(height * 0.10)
                 else:
-                    self.target_x, self.target_y = raw_x, raw_y
+                    slice_h = int(height * 0.70)
+
+                self.target_y = offset_y + int((raw_y / 1000) * slice_h)
 
                 self.mode = "SAILING"
-                self.root.after(0, lambda: self.label.config(text="🎯 Landfall!", bg="#00c853"))
+                self.root.after(0, lambda: self.label.config(text="🎯 LANDFALL!", bg="#00c853"))
                 self.root.after(0, lambda: self._show_stars(self.target_x, self.target_y))
+
         except Exception as e:
-            self.root.after(0, lambda: self.label.config(text="⚠️ ERROR", bg="orange"))
+            print(f"Detailed Error at Line 90 area: {e}")
+            self.root.after(0, lambda: self.label.config(text="⚠️ AI ERROR", bg="red"))
+
 
     def animation_loop(self):
         try:

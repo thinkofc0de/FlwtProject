@@ -1,23 +1,40 @@
 import pyautogui
 import base64
-from io import BytesIO
+import io
 from PIL import ImageEnhance
 
-def capture_screen_base64():
-    try: # <--- This was missing!
-        # 1. Take the screenshot
-        screenshot = pyautogui.screenshot()
 
-        # 2. Boost Contrast (Helps the Big Brain see through Dark Mode)
+def capture_targeted_region(region_type):
+    try:
+        width, height = pyautogui.size()
+
+        # 1. Define the Sector
+        if region_type == "RIBBON":
+            y_start, y_end = 0, int(height * 0.20)
+        elif region_type == "BOTTOM":
+            y_start, y_end = int(height * 0.90), height
+        else:
+            y_start, y_end = int(height * 0.20), int(height * 0.90)
+
+        # 2. Capture and IMMEDIATELY Resize
+        screenshot = pyautogui.screenshot(region=(0, y_start, width, y_end - y_start))
+
+        # WE OPTIMIZE HERE:
+        # Resize to a max width of 720px while keeping aspect ratio.
+        # This makes the Base64 string much shorter!
+        screenshot.thumbnail((720, 720))
+
+        # 3. Enhance Contrast but keep it simple
         enhancer = ImageEnhance.Contrast(screenshot)
-        screenshot = enhancer.enhance(2.0)
+        screenshot = enhancer.enhance(1.5)
 
-        # 3. Convert to Base64 for Ollama
-        buffered = BytesIO()
-        screenshot.save(buffered, format="JPEG", quality=90)
+        # 4. Save with Low Quality / High Compression
+        buffered = io.BytesIO()
+        screenshot.save(buffered, format="JPEG", quality=40, optimize=True)
         img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        return img_str
+
+        return img_str, y_start
 
     except Exception as e:
-        print(f"Vision Capture Error: {e}")
-        return None
+        print(f"Vision Speed Error: {e}")
+        return None, 0
